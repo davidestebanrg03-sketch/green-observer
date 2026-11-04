@@ -1,0 +1,8 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {"name": "Green Observer (interfaz)", "type": "debugpy", "request": "launch", "program": "${workspaceFolder}/main.py", "console": "integratedTerminal"},
+    {"name": "Prototipo (consola)", "type": "debugpy", "request": "launch", "program": "${workspaceFolder}/prototipo.py", "console": "integratedTerminal"},
+    {"name": "Validación e informes", "type": "debugpy", "request": "launch", "program": "${workspaceFolder}/validacion.py", "console": "integratedTerminal"}
+  ]
+}

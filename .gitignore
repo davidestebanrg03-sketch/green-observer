@@ -1,0 +1,8 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.idea/
+.vscode/settings.json
+.DS_Store
+resultados/prototipo.*
