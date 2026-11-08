@@ -1,14 +1,11 @@
-"""Control Center: análisis de la simulación compartida.
-
-Pestañas: Panel · Gráficas · Cálculos paso a paso · Control y eventos · Datos · Parámetros.
-No contiene lógica de simulación: lee de la ``SesionSimulacion`` y le pide acciones.
-"""
 import tkinter as tk
 from dataclasses import fields
 from tkinter import filedialog, messagebox, ttk
+from pathlib import Path
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
+from PIL import Image, ImageTk
 
 from invernadero import verificacion
 from invernadero.campos import BOOLEANOS, CAMPOS
@@ -20,131 +17,370 @@ from invernadero.sesion import VELOCIDADES, etiqueta_velocidad
 from .tema import AZUL, GRIS, NARANJA, ROJO, VERDE, fuente_mono, hora_de
 
 NOMBRES_EVENTO = {
-    "inicio": "Inicio", "fin": "Fin",
-    "riego_on": "Riego activado", "riego_off": "Riego desactivado",
-    "vent_on": "Ventilación activada", "vent_off": "Ventilación desactivada",
-    "luz_on": "Iluminación activada", "luz_off": "Iluminación desactivada",
+    "inicio": "Inicio",
+    "fin": "Fin",
+    "riego_on": "Riego activado",
+    "riego_off": "Riego desactivado",
+    "vent_on": "Ventilación activada",
+    "vent_off": "Ventilación desactivada",
+    "luz_on": "Iluminación activada",
+    "luz_off": "Iluminación desactivada",
 }
 
 
-class ControlCenter(ttk.Frame):
-    def __init__(self, maestro, sesion, abrir_invernadero=None, volver_inicio=None):
-        super().__init__(maestro)
-        self.sesion = sesion
+class ControlCenterPanel(tk.Frame):
+    """Centro de Control Integrado para Green Observer."""
+
+    def __init__(
+            self,
+            parent,
+            sesion_simulacion,
+            cambiar_pantalla_callback=None,
+            abrir_invernadero=None,
+            volver_inicio=None,
+            **kwargs,
+    ):
+        super().__init__(parent, bg="#F8FAFC")
+        self.sesion = sesion_simulacion
+        self.cambiar_pantalla = cambiar_pantalla_callback
         self.abrir_invernadero = abrir_invernadero
         self.volver_inicio = volver_inicio
+
         self.fuente_mono = fuente_mono(self)
         self.vars = {}
         self._ev_mostrados = 0
         self._ultimo_calc = None
         self._sombras = []
         self._pendiente = {"graficas": True, "calculos": True, "datos": True}
+        self.indice_actual = 0
+        self.vistas = []
 
-        self._crear_barra()
-        self.nb = ttk.Notebook(self)
-        self.nb.pack(fill="both", expand=True, padx=6, pady=(0, 6))
-        self._crear_panel()
+        # Paleta de colores ajustada para una estética Flat/Moderna
+        self.PALETA = {
+            "bg_sidebar": "#FFFFFF",
+            "bg_content": "#F8FAFC",
+            "bg_card": "#FFFFFF",
+            "border_card": "#E2E8F0",
+            "verde_primary": "#008075",
+            "verde_card_title": "#007A29",
+            "verde_boton_menu": "#F1F5F9",
+            "verde_activo": "#22C55E",
+            "rojo_inactivo": "#EF4444",
+            "cyan_agua": "#00E5FF",
+            "verde_destacado": "#10B981",
+            "texto_dark": "#1E293B",
+            "texto_light": "#64748B",
+        }
+
+        self._crear_interfaz()
+
+        if hasattr(self.sesion, "suscribir"):
+            self.sesion.suscribir(self._al_cambiar)
+        elif hasattr(self.sesion, "registrar_observador"):
+            self.sesion.registrar_observador(self._al_cambiar)
+        elif hasattr(self.sesion, "agregar_observador"):
+            self.sesion.agregar_observador(self._al_cambiar)
+
+        self._al_cambiar("nueva")
+
+    def _crear_interfaz(self):
+        self.columnconfigure(0, weight=0, minsize=240)
+        self.columnconfigure(1, weight=1)
+        self.rowconfigure(0, weight=1)
+
+        self._crear_sidebar()
+
+        self.area_derecha = tk.Frame(self, bg=self.PALETA["bg_content"])
+        self.area_derecha.grid(row=0, column=1, sticky="nsew")
+
+        self._crear_barra_superior(self.area_derecha)
+
+        # Contenedor de Vistas (Reemplaza al ttk.Notebook)
+        self.contenedor_vistas = tk.Frame(self.area_derecha, bg=self.PALETA["bg_content"])
+        self.contenedor_vistas.pack(fill="both", expand=True, padx=20, pady=10)
+
+        # Configurar el grid para que las vistas se superpongan
+        self.contenedor_vistas.grid_rowconfigure(0, weight=1)
+        self.contenedor_vistas.grid_columnconfigure(0, weight=1)
+
+        self._crear_panel_dashboard()
         self._crear_graficas()
         self._crear_calculos()
         self._crear_control()
         self._crear_datos()
         self._crear_parametros()
-        self.nb.bind("<<NotebookTabChanged>>", lambda e: self._refrescar_visible())
 
-        self._al_cambiar("nueva")
-        self.sesion.suscribir(self._al_cambiar)
+        self._cambiar_vista(0)
 
-    # ================================================================== barra
-    def _crear_barra(self):
-        barra = ttk.Frame(self, padding=6)
-        barra.pack(fill="x")
-        ttk.Label(barra, text="Escenario:").pack(side="left")
-        self.cb_escenario = ttk.Combobox(barra, state="readonly", width=32)
-        self.cb_escenario.pack(side="left", padx=4)
+    # ================================================================= SIDEBAR & BARRA
+    def _crear_sidebar(self):
+        sidebar = tk.Frame(self, bg=self.PALETA["bg_sidebar"], width=240)
+        sidebar.grid(row=0, column=0, sticky="nsew")
+        sidebar.grid_propagate(False)
+
+        tk.Frame(self, bg=self.PALETA["border_card"], width=1).place(x=239, y=0, relheight=1)
+
+        frame_logo = tk.Frame(sidebar, bg=self.PALETA["bg_sidebar"])
+        frame_logo.pack(fill="x", padx=20, pady=(25, 30))
+
+        ruta_logo = Path(__file__).resolve().parent.parent / "assets" / "logo_green_observer.png"
+
+        if ruta_logo.is_file():
+            img_pil = Image.open(ruta_logo).convert("RGBA")
+            img_pil.thumbnail((50, 50), Image.Resampling.LANCZOS)
+            self.img_logo = ImageTk.PhotoImage(img_pil, master=self)
+            lbl_img = tk.Label(frame_logo, image=self.img_logo, bg=self.PALETA["bg_sidebar"])
+            lbl_img.pack(side="left", padx=(0, 10))
+        else:
+            lbl_img = tk.Label(frame_logo, text="[GO]", font=("Segoe UI", 12, "bold"), fg=self.PALETA["verde_primary"],
+                               bg=self.PALETA["bg_sidebar"])
+            lbl_img.pack(side="left", padx=(0, 10))
+
+        lbl_titulo = tk.Label(frame_logo, text="Green\nObserver", font=("Segoe UI", 14, "bold"),
+                              fg=self.PALETA["verde_primary"], bg=self.PALETA["bg_sidebar"], justify="left")
+        lbl_titulo.pack(side="left")
+
+        self.opciones_menu = [
+            ("Panel", 0, "icon_panel.png"),
+            ("Gráficas", 1, "icon_graficas.png"),
+            ("Cálculos", 2, "icon_calculos.png"),
+            ("Control y eventos", 3, "icon_control.png"),
+            ("Datos", 4, "icon_datos.png"),
+            ("Parámetros", 5, "icon_parametros.png"),
+        ]
+
+        self.iconos_menu = {}
+        carpeta_assets = Path(__file__).resolve().parent.parent / "assets"
+
+        for texto, idx, archivo in self.opciones_menu:
+            ruta_icono = carpeta_assets / archivo
+            if ruta_icono.is_file():
+                imagen = Image.open(ruta_icono).convert("RGBA")
+                imagen.thumbnail((20, 20), Image.Resampling.LANCZOS)
+                self.iconos_menu[idx] = ImageTk.PhotoImage(imagen, master=self)
+            else:
+                self.iconos_menu[idx] = None
+
+        self.botones_menu = []
+
+        for texto, idx, archivo in self.opciones_menu:
+            btn = tk.Button(
+                sidebar,
+                text="  " + texto,
+                image=self.iconos_menu[idx],
+                compound="left",
+                font=("Segoe UI", 10, "bold"),
+                fg=self.PALETA["texto_light"],
+                bg=self.PALETA["bg_sidebar"],
+                activebackground=self.PALETA["verde_boton_menu"],
+                activeforeground=self.PALETA["verde_primary"],
+                bd=0,
+                anchor="w",
+                padx=20,
+                pady=12,
+                cursor="hand2",
+                relief="flat",
+                command=lambda i=idx: self._cambiar_vista(i),
+            )
+            btn.pack(fill="x")
+            self.botones_menu.append(btn)
+
+        frame_bottom = tk.Frame(sidebar, bg=self.PALETA["bg_sidebar"])
+        frame_bottom.pack(side="bottom", fill="x", padx=20, pady=20)
+
+        frame_exp = tk.Frame(frame_bottom, bg=self.PALETA["bg_sidebar"])
+        frame_exp.pack(fill="x", pady=(0, 10))
+
+        tk.Label(frame_exp, text="Exportar", font=("Segoe UI", 9, "bold"), fg=self.PALETA["texto_light"],
+                 bg=self.PALETA["bg_sidebar"]).pack(side="left", padx=(0, 6))
+        tk.Button(frame_exp, text="CSV", font=("Segoe UI", 8, "bold"), fg="white", bg="#10B981", bd=0, padx=10, pady=4,
+                  cursor="hand2", relief="flat", command=self.exportar_csv).pack(side="left", padx=2)
+        tk.Button(frame_exp, text="DOCX", font=("Segoe UI", 8, "bold"), fg="white", bg="#10B981", bd=0, padx=10, pady=4,
+                  cursor="hand2", relief="flat", command=self.generar_informe).pack(side="left", padx=2)
+
+        tk.Button(frame_bottom, text="Verificar modelo", font=("Segoe UI", 9, "bold"), fg="white",
+                  bg=self.PALETA["verde_primary"], bd=0, pady=6, cursor="hand2", relief="flat",
+                  command=self.verificar).pack(fill="x", pady=(0, 8))
+
+        if self.abrir_invernadero:
+            tk.Button(frame_bottom, text="Abrir Invernadero", font=("Segoe UI", 9, "bold"), fg="white",
+                      bg=self.PALETA["verde_destacado"], bd=0, pady=6, cursor="hand2", relief="flat",
+                      command=self.abrir_invernadero).pack(fill="x", pady=(0, 8))
+
+        if self.volver_inicio:
+            tk.Button(frame_bottom, text="⌂ Inicio", font=("Segoe UI", 9, "bold"), fg=self.PALETA["texto_dark"],
+                      bg=self.PALETA["verde_boton_menu"], bd=0, pady=6, cursor="hand2", relief="flat",
+                      command=self.volver_inicio).pack(fill="x")
+
+    def _crear_barra_superior(self, parent):
+        barra = tk.Frame(parent, bg="#FFFFFF", padx=15, pady=10)
+        barra.pack(fill="x", side="top")
+
+        tk.Frame(parent, bg=self.PALETA["border_card"], height=1).pack(fill="x", side="top")
+
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure("TCombobox", padding=5, relief="flat", background="#F1F5F9")
+
+        tk.Label(barra, text="Escenario:", bg="#FFFFFF", fg=self.PALETA["texto_dark"],
+                 font=("Segoe UI", 9, "bold")).pack(side="left")
+        self.cb_escenario = ttk.Combobox(barra, state="readonly", width=25, font=("Segoe UI", 9))
+        self.cb_escenario.pack(side="left", padx=8)
         self.cb_escenario.bind("<<ComboboxSelected>>", self._elegir_escenario)
 
-        self.btn_play = ttk.Button(barra, text="▶ Iniciar", width=11, command=self.sesion.alternar)
-        self.btn_play.pack(side="left", padx=2)
-        ttk.Button(barra, text="⏭ Paso", command=self.sesion.un_paso).pack(side="left", padx=2)
-        ttk.Button(barra, text="⏩ Ejecutar todo", command=self.sesion.ejecutar_todo).pack(side="left", padx=2)
-        ttk.Button(barra, text="⟲ Reiniciar", command=self.sesion.reiniciar).pack(side="left", padx=2)
+        btn_style = {"font": ("Segoe UI", 9, "bold"), "bd": 0, "padx": 12, "pady": 5, "cursor": "hand2",
+                     "relief": "flat"}
 
-        ttk.Label(barra, text="  Velocidad:").pack(side="left")
-        self.cb_vel = ttk.Combobox(barra, state="readonly", width=11,
-                                   values=[etiqueta_velocidad(v) for v in VELOCIDADES])
-        self.cb_vel.pack(side="left", padx=4)
+        self.btn_play = tk.Button(barra, text="▶ Iniciar", bg="#10B981", fg="white", command=self.sesion.alternar,
+                                  **btn_style)
+        self.btn_play.pack(side="left", padx=4)
+
+        tk.Button(barra, text="⏭ Paso", bg="#F1F5F9", fg=self.PALETA["texto_dark"], command=self.sesion.un_paso,
+                  **btn_style).pack(side="left", padx=4)
+        tk.Button(barra, text="⏩ Todo", bg="#F1F5F9", fg=self.PALETA["texto_dark"], command=self.sesion.ejecutar_todo,
+                  **btn_style).pack(side="left", padx=4)
+        tk.Button(barra, text="⟲ Reiniciar", bg="#F1F5F9", fg=self.PALETA["texto_dark"], command=self.sesion.reiniciar,
+                  **btn_style).pack(side="left", padx=4)
+
+        tk.Label(barra, text="Velocidad:", bg="#FFFFFF", fg=self.PALETA["texto_dark"],
+                 font=("Segoe UI", 9, "bold")).pack(side="left", padx=(15, 0))
+        self.cb_vel = ttk.Combobox(barra, state="readonly", width=12,
+                                   values=[etiqueta_velocidad(v) for v in VELOCIDADES], font=("Segoe UI", 9))
+        self.cb_vel.pack(side="left", padx=8)
         self.cb_vel.bind("<<ComboboxSelected>>",
                          lambda e: self.sesion.set_velocidad(VELOCIDADES[self.cb_vel.current()]))
 
-        # segunda fila: salidas y navegación (así la barra cabe en pantallas pequeñas)
-        barra2 = ttk.Frame(self, padding=(6, 0, 6, 4))
-        barra2.pack(fill="x")
-        if self.abrir_invernadero:
-            ttk.Button(barra2, text="🌱 Invernadero virtual", command=self.abrir_invernadero).pack(side="left", padx=2)
-        ttk.Button(barra2, text="Verificar modelo", command=self.verificar).pack(side="left", padx=2)
-        ttk.Button(barra2, text="Exportar CSV", command=self.exportar_csv).pack(side="left", padx=2)
-        ttk.Button(barra2, text="Informe (.docx)", command=self.generar_informe).pack(side="left", padx=2)
-        if self.volver_inicio:
-            ttk.Button(barra2, text="⌂ Inicio", command=self.volver_inicio).pack(side="right", padx=2)
+        style.configure("TProgressbar", thickness=8, background="#10B981", troughcolor="#E2E8F0")
+        self.progreso = ttk.Progressbar(parent, mode="determinate")
+        self.progreso.pack(fill="x", padx=15, pady=(10, 2))
 
-        self.progreso = ttk.Progressbar(self, mode="determinate")
-        self.progreso.pack(fill="x", padx=8)
-        self.lbl_tiempo = ttk.Label(self, text="", anchor="w")
-        self.lbl_tiempo.pack(fill="x", padx=8)
+        self.lbl_tiempo = tk.Label(parent, text="", anchor="w", font=("Segoe UI", 9), bg=self.PALETA["bg_content"],
+                                   fg=self.PALETA["texto_light"])
+        self.lbl_tiempo.pack(fill="x", padx=15, pady=(2, 10))
 
-    # ================================================================== panel
-    def _crear_panel(self):
-        f = ttk.Frame(self.nb, padding=15)
-        self.nb.add(f, text=" Panel ")
-        ttk.Label(f, text="Estado del invernadero", font=("Arial", 16, "bold")).pack(anchor="w", pady=(0, 12))
+    def _cambiar_vista(self, index):
+        self.indice_actual = index
+        for i, vista in enumerate(self.vistas):
+            if i == index:
+                vista.tkraise()
 
-        grandes = ttk.Frame(f)
-        grandes.pack(fill="x", pady=(0, 14))
-        self.grande = {}
-        for clave, texto in (("T", "Temperatura interior"), ("H", "Humedad del suelo"),
-                             ("L", "Luminosidad"), ("P", "Tamaño de la planta")):
-            marco = ttk.Frame(grandes)
-            marco.pack(side="left", expand=True, fill="x", padx=5)
-            ttk.Label(marco, text=texto, font=("Arial", 10)).pack()
-            lbl = tk.Label(marco, text="–", fg="white", bg=GRIS, font=("Arial", 18, "bold"), pady=10)
-            lbl.pack(fill="x")
-            self.grande[clave] = lbl
+        for i, btn in enumerate(self.botones_menu):
+            if i == index:
+                btn.config(bg=self.PALETA["verde_boton_menu"], fg=self.PALETA["verde_primary"])
+            else:
+                btn.config(bg=self.PALETA["bg_sidebar"], fg=self.PALETA["texto_light"])
 
-        det = ttk.LabelFrame(f, text="Detalle", padding=10)
-        det.pack(fill="x")
-        self.ind = {}
-        for i, (clave, texto) in enumerate((("Tamb", "Temp. exterior"), ("hora", "Hora del día"),
-                                            ("riego", "Riego"), ("vent", "Ventilación"),
-                                            ("luz", "Iluminación artificial"))):
-            ttk.Label(det, text=texto + ":", width=22).grid(row=i, column=0, sticky="w", pady=2)
-            lbl = tk.Label(det, text="–", width=16, fg="white", bg=GRIS, font=("TkDefaultFont", 10, "bold"))
-            lbl.grid(row=i, column=1, sticky="w", pady=2)
-            self.ind[clave] = lbl
-        ttk.Label(f, text="Verde = dentro del rango · Naranja/Rojo = fuera del rango · "
-                          "Azul = por encima del rango (humedad) o frío",
-                  foreground="#555").pack(anchor="w", pady=(10, 0))
-        if self.abrir_invernadero:
-            ttk.Button(f, text="🌱 Ver el invernadero virtual", command=self.abrir_invernadero).pack(anchor="w", pady=14)
+        self._refrescar_visible()
+
+    # ================================================================= TAB 1: PANEL / DASHBOARD
+    def _crear_panel_dashboard(self):
+        f = tk.Frame(self.contenedor_vistas, bg=self.PALETA["bg_content"])
+        f.grid(row=0, column=0, sticky="nsew")  # SUPERPUESTO
+        self.vistas.append(f)
+
+        lbl_header = tk.Label(f, text="Estado del invernadero", font=("Segoe UI", 18, "bold"),
+                              fg=self.PALETA["texto_dark"], bg=self.PALETA["bg_content"])
+        lbl_header.pack(pady=(10, 20))
+
+        frame_cards = tk.Frame(f, bg=self.PALETA["bg_content"])
+        frame_cards.pack(fill="x", padx=10)
+
+        for col in range(4):
+            frame_cards.columnconfigure(col, weight=1, uniform="tarjetas")
+
+        def crear_tarjeta(col, titulo, archivo_img, var_texto):
+            card = tk.Frame(frame_cards, bg=self.PALETA["bg_card"], highlightbackground=self.PALETA["border_card"],
+                            highlightthickness=1)
+            card.grid(row=0, column=col, sticky="nsew", padx=8, pady=8)
+
+            tk.Label(card, text=titulo, font=("Segoe UI", 11, "bold"), fg=self.PALETA["texto_light"],
+                     bg=self.PALETA["bg_card"]).pack(pady=(15, 10))
+
+            frame_val = tk.Frame(card, bg=self.PALETA["bg_card"])
+            frame_val.pack(pady=(0, 15))
+
+            # --- NUEVO BLOQUE PARA CARGAR LA IMAGEN ---
+            ruta_img = Path(__file__).resolve().parent.parent / "assets" / archivo_img
+            if ruta_img.is_file():
+                img_pil = Image.open(ruta_img).convert("RGBA")
+                img_pil.thumbnail((35, 35), Image.Resampling.LANCZOS)  # Ajusta el tamaño (ancho, alto) aquí
+                img_tk = ImageTk.PhotoImage(img_pil, master=self)
+
+                lbl_icono = tk.Label(frame_val, image=img_tk, bg=self.PALETA["bg_card"])
+                lbl_icono.image = img_tk  # Vital para que la imagen no desaparezca
+                lbl_icono.pack(side="left", padx=10)
+            else:
+                # Respaldo por si la imagen no se encuentra
+                tk.Label(frame_val, text="[Falta Img]", bg=self.PALETA["bg_card"], font=("Segoe UI", 9),
+                         fg="gray").pack(side="left", padx=10)
+            # ------------------------------------------
+
+            lbl = tk.Label(frame_val, text=var_texto, font=("Segoe UI", 16, "bold"), bg=self.PALETA["bg_card"],
+                           fg=self.PALETA["texto_dark"])
+            lbl.pack(side="left")
+            return lbl
+
+        # --- LLAMADAS ACTUALIZADAS ---
+        self.lbl_card_temp = crear_tarjeta(0, "Temperatura", "icon_temp.png", "-- °C")
+        self.lbl_card_hum = crear_tarjeta(1, "Humedad del suelo", "icon_hum.png", "-- %")
+        self.lbl_card_luz = crear_tarjeta(2, "Iluminación", "icon_luz.png", "-- %")
+        self.lbl_card_bio = crear_tarjeta(3, "Crecimiento", "icon_bio.png", "-- cm")
+
+        # Indicadores
+        frame_actuadores = tk.Frame(f, bg=self.PALETA["bg_content"])
+        frame_actuadores.pack(fill="x", pady=(30, 0), padx=10)
+
+        for col in range(3):
+            frame_actuadores.columnconfigure(col, weight=1)
+
+        _, self.canvas_ind_riego = self._crear_badge_actuador(frame_actuadores, "Riego", 0)
+        _, self.canvas_ind_vent = self._crear_badge_actuador(frame_actuadores, "Ventilación", 1)
+        _, self.canvas_ind_ilum = self._crear_badge_actuador(frame_actuadores, "Iluminación artificial", 2)
+
+    def _crear_badge_actuador(self, parent, texto, col):
+        container = tk.Frame(parent, bg=self.PALETA["bg_content"])
+        container.grid(row=0, column=col, padx=5)
+
+        pill = tk.Frame(container, bg=self.PALETA["bg_card"], highlightbackground=self.PALETA["border_card"],
+                        highlightthickness=1, padx=15, pady=8)
+        pill.pack()
+
+        canvas_ind = tk.Canvas(pill, width=14, height=14, bg=self.PALETA["bg_card"], highlightthickness=0)
+        canvas_ind.pack(side="left", padx=(0, 8))
+        canvas_ind.create_oval(2, 2, 12, 12, fill=self.PALETA["rojo_inactivo"], outline="")
+
+        lbl = tk.Label(pill, text=texto, font=("Segoe UI", 10, "bold"), fg=self.PALETA["texto_dark"],
+                       bg=self.PALETA["bg_card"])
+        lbl.pack(side="left")
+        return pill, canvas_ind
+
 
     def _actualizar_panel(self):
         sim = self.sesion.sim
         r, p = sim.actual, sim.p
-        ct = ROJO if r.T >= p.T_max else AZUL if r.T < 15 else VERDE
-        ch = NARANJA if r.H <= p.H_min else AZUL if r.H >= p.H_max else VERDE
-        for lbl, txt, col in ((self.grande["T"], f"{r.T:.2f} °C", ct), (self.grande["H"], f"{r.H:.2f} %", ch),
-                              (self.grande["L"], f"{r.L:.1f} %", "#c99a12"),
-                              (self.grande["P"], f"{r.P:.2f} cm" if p.usar_crecimiento else "no simulado", "#2e8b57"),
-                              (self.ind["Tamb"], f"{r.Tamb:.2f} °C", "#777"),
-                              (self.ind["hora"], hora_de(r.t, p), "#777")):
-            lbl.config(text=txt, bg=col)
-        for clave in ("riego", "vent", "luz"):
-            activo = getattr(r, clave)
-            self.ind[clave].config(text="ACTIVO" if activo else "inactivo", bg=VERDE if activo else GRIS)
 
-    # ================================================================ gráficas
+        ct = "#EF4444" if r.T >= p.T_max else "#3B82F6" if r.T < 15 else "#10B981"
+        ch = "#F59E0B" if r.H <= p.H_min else "#3B82F6" if r.H >= p.H_max else "#10B981"
+
+        self.lbl_card_temp.config(text=f"{r.T:.1f} °C", fg=ct)
+        self.lbl_card_hum.config(text=f"{r.H:.1f} %", fg=ch)
+        self.lbl_card_luz.config(text=f"{r.L:.1f} %", fg="#D97706")
+        self.lbl_card_bio.config(text=f"{r.P:.2f} cm" if getattr(p, "usar_crecimiento", True) else "N/A")
+
+        self._set_estado_badge(self.canvas_ind_riego, r.riego)
+        self._set_estado_badge(self.canvas_ind_vent, r.vent)
+        self._set_estado_badge(self.canvas_ind_ilum, r.luz)
+
+    def _set_estado_badge(self, canvas, activo):
+        color = self.PALETA["verde_activo"] if activo else self.PALETA["rojo_inactivo"]
+        canvas.delete("all")
+        canvas.create_oval(2, 2, 12, 12, fill=color, outline="")
+
+    # ================================================================= TAB 2: GRÁFICAS
     def _crear_graficas(self):
-        f = ttk.Frame(self.nb)
-        self.nb.add(f, text=" Gráficas ")
+        f = tk.Frame(self.contenedor_vistas, bg=self.PALETA["bg_content"])
+        f.grid(row=0, column=0, sticky="nsew")
+        self.vistas.append(f)
         self.fig = Figure(figsize=(9, 7), dpi=100)
         self.canvas_fig = FigureCanvasTkAgg(self.fig, master=f)
         self.canvas_fig.get_tk_widget().pack(fill="both", expand=True)
@@ -195,44 +431,60 @@ class ControlCenter(ttk.Frame):
         for s in self._sombras:
             s.remove()
         self._sombras = []
-        for ax, attr, color in ((self.axs[0], "vent", "#5bc0de"), (self.axs[1], "riego", "#7fb3d5"),
-                                (self.axs[2], "luz", "#f7dc6f")):
+        for ax, attr, color in (
+                (self.axs[0], "vent", "#5bc0de"),
+                (self.axs[1], "riego", "#7fb3d5"),
+                (self.axs[2], "luz", "#f7dc6f"),
+        ):
             flags = [getattr(r, attr) for r in rs]
             if any(flags):
-                self._sombras.append(ax.fill_between(t, 0, 1, where=flags, color=color, alpha=0.25,
-                                                     transform=ax.get_xaxis_transform(), linewidth=0))
+                self._sombras.append(
+                    ax.fill_between(
+                        t, 0, 1, where=flags, color=color, alpha=0.25, transform=ax.get_xaxis_transform(), linewidth=0,
+                    )
+                )
         for i, ax in enumerate(self.axs):
             ax.relim()
             ax.autoscale_view(scalex=False, scaley=(i != 1))
         self.canvas_fig.draw_idle()
 
-    # ================================================================ cálculos
+    # ================================================================= TAB 3: CÁLCULOS
     def _crear_calculos(self):
-        f = ttk.Frame(self.nb)
-        self.nb.add(f, text=" Cálculos paso a paso ")
-        panel = ttk.PanedWindow(f, orient="horizontal")
-        panel.pack(fill="both", expand=True, padx=6, pady=6)
+        f = tk.Frame(self.contenedor_vistas, bg=self.PALETA["bg_content"])
+        f.grid(row=0, column=0, sticky="nsew")
+        self.vistas.append(f)
 
-        izq = ttk.LabelFrame(panel, text="Ecuaciones del modelo", padding=4)
-        self.txt_ecu = tk.Text(izq, width=62, font=self.fuente_mono, wrap="none", bg="#fbfbf4")
+        panel = ttk.PanedWindow(f, orient="horizontal")
+        panel.pack(fill="both", expand=True)
+
+        izq = tk.LabelFrame(panel, text="Ecuaciones del modelo", bg=self.PALETA["bg_card"],
+                            fg=self.PALETA["texto_dark"], bd=1, relief="solid", padx=10, pady=10)
+        self.txt_ecu = tk.Text(izq, width=55, font=self.fuente_mono, wrap="none", bg="#F8FAFC", bd=0,
+                               highlightthickness=0)
         self.txt_ecu.pack(fill="both", expand=True)
         panel.add(izq, weight=2)
 
-        der = ttk.LabelFrame(panel, text="Cálculo del paso seleccionado", padding=4)
-        nav = ttk.Frame(der)
+        der = tk.LabelFrame(panel, text="Cálculo del paso seleccionado", bg=self.PALETA["bg_card"],
+                            fg=self.PALETA["texto_dark"], bd=1, relief="solid", padx=10, pady=10)
+        nav = tk.Frame(der, bg=self.PALETA["bg_card"])
         nav.pack(fill="x")
+
+        style = ttk.Style()
+        style.configure("TButton", padding=3)
+
         ttk.Button(nav, text="◀", width=3, command=lambda: self._mover_paso(-1)).pack(side="left")
         self.paso_sel = tk.IntVar(value=0)
-        self.spin = ttk.Spinbox(nav, from_=0, to=0, textvariable=self.paso_sel, width=8,
-                                command=self._mostrar_calculo)
+        self.spin = ttk.Spinbox(nav, from_=0, to=0, textvariable=self.paso_sel, width=8, command=self._mostrar_calculo)
         self.spin.pack(side="left", padx=4)
         self.spin.bind("<Return>", lambda e: self._mostrar_calculo())
         ttk.Button(nav, text="▶", width=3, command=lambda: self._mover_paso(+1)).pack(side="left")
+
         self.seguir = tk.BooleanVar(value=True)
         ttk.Checkbutton(nav, text="Seguir el último paso calculado", variable=self.seguir,
                         command=self._mostrar_calculo).pack(side="left", padx=10)
-        self.txt_calc = tk.Text(der, font=self.fuente_mono, wrap="none", bg="#fbfbf4")
-        self.txt_calc.pack(fill="both", expand=True, pady=(4, 0))
+
+        self.txt_calc = tk.Text(der, font=self.fuente_mono, wrap="none", bg="#F8FAFC", bd=0, highlightthickness=0)
+        self.txt_calc.pack(fill="both", expand=True, pady=(10, 0))
         panel.add(der, weight=3)
 
     def _mover_paso(self, d):
@@ -270,25 +522,36 @@ class ControlCenter(ttk.Frame):
         self.txt_calc.insert("1.0", texto)
         self.txt_calc.config(state="disabled")
 
-    # ============================================================== control
+    # ================================================================= TAB 4: CONTROL Y EVENTOS
     def _crear_control(self):
-        f = ttk.Frame(self.nb)
-        self.nb.add(f, text=" Control y eventos ")
-        top = ttk.LabelFrame(f, text="Mecanismos de control virtual", padding=10)
-        top.pack(fill="x", padx=8, pady=8)
-        self.lbl_ctrl = {}
-        for i, (clave, texto) in enumerate((("riego", "Sistema de riego"), ("vent", "Ventilación"),
-                                            ("luz", "Iluminación artificial"))):
-            ttk.Label(top, text=texto, font=("TkDefaultFont", 10, "bold")).grid(row=0, column=i, padx=20)
-            lbl = tk.Label(top, text="inactivo", width=14, fg="white", bg=GRIS, font=("TkDefaultFont", 11, "bold"))
-            lbl.grid(row=1, column=i, padx=20, pady=4)
-            self.lbl_ctrl[clave] = lbl
-        self.lbl_cont = ttk.Label(top, text="")
-        self.lbl_cont.grid(row=3, column=0, columnspan=3, pady=(8, 0))
+        f = tk.Frame(self.contenedor_vistas, bg=self.PALETA["bg_content"])
+        f.grid(row=0, column=0, sticky="nsew")
+        self.vistas.append(f)
 
-        cuadro = ttk.LabelFrame(f, text="Historial de eventos", padding=4)
-        cuadro.pack(fill="both", expand=True, padx=8, pady=(0, 8))
-        self.txt_ev = tk.Text(cuadro, font=self.fuente_mono, state="disabled")
+        top = tk.LabelFrame(f, text="Mecanismos de control virtual", bg=self.PALETA["bg_card"],
+                            fg=self.PALETA["texto_dark"], bd=1, relief="solid", padx=15, pady=15)
+        top.pack(fill="x", pady=(0, 10))
+
+        self.lbl_ctrl = {}
+        for i, (clave, texto) in enumerate(
+                (("riego", "Sistema de riego"), ("vent", "Ventilación"), ("luz", "Iluminación artificial"))
+        ):
+            tk.Label(top, text=texto, font=("Segoe UI", 10, "bold"), bg=self.PALETA["bg_card"],
+                     fg=self.PALETA["texto_dark"]).grid(row=0, column=i, padx=20)
+            lbl = tk.Label(top, text="inactivo", width=14, fg="white", bg=self.PALETA["rojo_inactivo"],
+                           font=("Segoe UI", 11, "bold"), pady=5)
+            lbl.grid(row=1, column=i, padx=20, pady=8)
+            self.lbl_ctrl[clave] = lbl
+
+        self.lbl_cont = tk.Label(top, text="", bg=self.PALETA["bg_card"], fg=self.PALETA["texto_light"],
+                                 font=("Segoe UI", 9))
+        self.lbl_cont.grid(row=2, column=0, columnspan=3, pady=(15, 0))
+
+        cuadro = tk.LabelFrame(f, text="Historial de eventos", bg=self.PALETA["bg_card"], fg=self.PALETA["texto_dark"],
+                               bd=1, relief="solid", padx=10, pady=10)
+        cuadro.pack(fill="both", expand=True)
+
+        self.txt_ev = tk.Text(cuadro, font=self.fuente_mono, state="disabled", bg="#F8FAFC", bd=0, highlightthickness=0)
         sb = ttk.Scrollbar(cuadro, command=self.txt_ev.yview)
         self.txt_ev.config(yscrollcommand=sb.set)
         sb.pack(side="right", fill="y")
@@ -299,71 +562,138 @@ class ControlCenter(ttk.Frame):
         r = sim.actual
         for clave in ("riego", "vent", "luz"):
             activo = getattr(r, clave)
-            self.lbl_ctrl[clave].config(text="ACTIVO" if activo else "inactivo", bg=VERDE if activo else GRIS)
+            self.lbl_ctrl[clave].config(
+                text="ACTIVO" if activo else "inactivo",
+                bg=self.PALETA["verde_activo"] if activo else self.PALETA["rojo_inactivo"]
+            )
         res = sim.resumen()
-        self.lbl_cont.config(text=f"Activaciones – riego: {res['act_riego']} ({res['min_riego']:g} min)   |   "
-                                  f"ventilación: {res['act_vent']} ({res['min_vent']:g} min)   |   "
-                                  f"iluminación: {res['act_luz']} ({res['min_luz']:g} min)")
+        self.lbl_cont.config(
+            text=f"Activaciones – riego: {res['act_riego']} ({res['min_riego']:g} min)   |   "
+                 f"ventilación: {res['act_vent']} ({res['min_vent']:g} min)   |   "
+                 f"iluminación: {res['act_luz']} ({res['min_luz']:g} min)"
+        )
         nuevos = sim.eventos[self._ev_mostrados:]
         if nuevos:
             self.txt_ev.config(state="normal")
             for t, tipo, txt in nuevos:
-                self.txt_ev.insert("end", f"t = {t:8.1f} min | {hora_de(t, p)} | "
-                                          f"{NOMBRES_EVENTO.get(tipo, tipo):22s} | {txt}\n")
+                self.txt_ev.insert(
+                    "end",
+                    f"t = {t:8.1f} min | {hora_de(t, p)} | "
+                    f"{NOMBRES_EVENTO.get(tipo, tipo):22s} | {txt}\n",
+                )
             self.txt_ev.see("end")
             self.txt_ev.config(state="disabled")
             self._ev_mostrados = len(sim.eventos)
 
-    # ================================================================== datos
+    # ================================================================= TAB 5: DATOS
     def _crear_datos(self):
-        f = ttk.Frame(self.nb)
-        self.nb.add(f, text=" Datos ")
+        f = tk.Frame(self.contenedor_vistas, bg=self.PALETA["bg_content"])
+        f.grid(row=0, column=0, sticky="nsew")
+        self.vistas.append(f)
+
         cols = ("t", "hora", "T", "H", "L", "P", "R", "E", "riego", "vent", "luz")
         nombres = ("t [min]", "hora", "T [°C]", "H [%]", "L [%]", "P [cm]", "R", "E", "riego", "vent.", "luz")
-        self.tabla = ttk.Treeview(f, columns=cols, show="headings", height=20)
+
+        style = ttk.Style()
+        style.configure("Treeview", rowheight=25, font=("Segoe UI", 9))
+        style.configure("Treeview.Heading", font=("Segoe UI", 9, "bold"), background="#F1F5F9", relief="flat")
+
+        self.tabla = ttk.Treeview(f, columns=cols, show="headings")
         for c, n in zip(cols, nombres):
             self.tabla.heading(c, text=n)
             self.tabla.column(c, width=80, anchor="center")
         sb = ttk.Scrollbar(f, command=self.tabla.yview)
         self.tabla.config(yscrollcommand=sb.set)
         sb.pack(side="right", fill="y")
-        self.tabla.pack(fill="both", expand=True, padx=6, pady=6)
+        self.tabla.pack(fill="both", expand=True)
 
     def _actualizar_tabla(self):
         sim = self.sesion.sim
         self.tabla.delete(*self.tabla.get_children())
         onoff = lambda x: "ON" if x else "–"
         for r in sim.registros[-300:]:
-            self.tabla.insert("", "end", values=(f"{r.t:g}", hora_de(r.t, sim.p), f"{r.T:.3f}", f"{r.H:.3f}",
-                                                 f"{r.L:.2f}", f"{r.P:.3f}", f"{r.R:g}", f"{r.E:.4f}",
-                                                 onoff(r.riego), onoff(r.vent), onoff(r.luz)))
+            self.tabla.insert(
+                "", "end",
+                values=(
+                    f"{r.t:g}", hora_de(r.t, sim.p), f"{r.T:.3f}", f"{r.H:.3f}", f"{r.L:.2f}", f"{r.P:.3f}", f"{r.R:g}",
+                    f"{r.E:.4f}",
+                    onoff(r.riego), onoff(r.vent), onoff(r.luz),
+                ),
+            )
         hijos = self.tabla.get_children()
         if hijos:
             self.tabla.see(hijos[-1])
 
-    # ============================================================== parámetros
+    # ================================================================= TAB 6: PARÁMETROS
     def _crear_parametros(self):
-        f = ttk.Frame(self.nb)
-        self.nb.add(f, text=" Parámetros ")
-        marco = ttk.Frame(f)
-        marco.pack(fill="both", expand=True, padx=8, pady=8)
+        f = tk.Frame(self.contenedor_vistas, bg=self.PALETA["bg_content"])
+        f.grid(row=0, column=0, sticky="nsew")
+        self.vistas.append(f)
+
+        # --- 1. CREAR EL CANVAS Y LA BARRA DE DESPLAZAMIENTO ---
+        canvas = tk.Canvas(f, bg=self.PALETA["bg_content"], highlightthickness=0)
+        scrollbar = ttk.Scrollbar(f, orient="vertical", command=canvas.yview)
+
+        # Este es el frame que irá dentro del canvas y contendrá todos tus campos
+        marco_scrollable = tk.Frame(canvas, bg=self.PALETA["bg_content"])
+
+        # Actualizar el área de scroll dinámicamente cuando el frame cambie de tamaño
+        marco_scrollable.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        # Crear una "ventana" dentro del canvas para meter el frame
+        canvas_window = canvas.create_window((0, 0), window=marco_scrollable, anchor="nw")
+
+        # Hacer que el frame se expanda para ocupar todo el ancho del canvas
+        canvas.bind('<Configure>', lambda e: canvas.itemconfig(canvas_window, width=e.width))
+
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        # Empaquetar el canvas y la barra
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # (Opcional) Permitir usar la rueda del ratón para hacer scroll
+        f.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+        # -------------------------------------------------------
+
+        # --- 2. DIBUJAR TUS CAMPOS DENTRO DEL 'marco_scrollable' ---
         for i, (grupo, lista) in enumerate(CAMPOS):
-            lf = ttk.LabelFrame(marco, text=grupo, padding=6)
-            lf.grid(row=i // 3, column=i % 3, sticky="nsew", padx=5, pady=5)
+            lf = tk.LabelFrame(marco_scrollable, text=grupo, bg=self.PALETA["bg_card"], fg=self.PALETA["texto_dark"],
+                               bd=1,
+                               relief="solid", padx=15, pady=15)
+            lf.grid(row=i // 3, column=i % 3, sticky="nsew", padx=8, pady=8)
             for r, (campo, etiqueta, unidad) in enumerate(lista):
-                ttk.Label(lf, text=etiqueta).grid(row=r, column=0, sticky="w")
+                tk.Label(lf, text=etiqueta, bg=self.PALETA["bg_card"], fg=self.PALETA["texto_dark"],
+                         font=("Segoe UI", 9)).grid(row=r, column=0, sticky="w", pady=2)
                 v = tk.StringVar()
-                ttk.Entry(lf, textvariable=v, width=10).grid(row=r, column=1, padx=4, pady=1)
-                ttk.Label(lf, text=unidad, foreground="#666").grid(row=r, column=2, sticky="w")
+                ttk.Entry(lf, textvariable=v, width=10, font=("Segoe UI", 9)).grid(row=r, column=1, padx=5, pady=2)
+                tk.Label(lf, text=unidad, fg=self.PALETA["texto_light"], bg=self.PALETA["bg_card"],
+                         font=("Segoe UI", 9)).grid(row=r, column=2, sticky="w")
                 self.vars[campo] = v
-        lf = ttk.LabelFrame(marco, text="Opciones", padding=6)
-        lf.grid(row=len(CAMPOS) // 3, column=len(CAMPOS) % 3, sticky="nsew", padx=5, pady=5)
+
+        # Opciones
+        lf = tk.LabelFrame(marco_scrollable, text="Opciones", bg=self.PALETA["bg_card"], fg=self.PALETA["texto_dark"],
+                           bd=1,
+                           relief="solid", padx=15, pady=15)
+        lf.grid(row=len(CAMPOS) // 3, column=len(CAMPOS) % 3, sticky="nsew", padx=8, pady=8)
+
         for campo, etiqueta in BOOLEANOS:
             v = tk.BooleanVar()
-            ttk.Checkbutton(lf, text=etiqueta, variable=v).pack(anchor="w")
+            tk.Checkbutton(lf, text=etiqueta, variable=v, bg=self.PALETA["bg_card"], fg=self.PALETA["texto_dark"],
+                           activebackground=self.PALETA["bg_card"], font=("Segoe UI", 9)).pack(anchor="w", pady=2)
             self.vars[campo] = v
-        ttk.Button(marco, text="Aplicar parámetros y reiniciar simulación",
-                   command=self.aplicar_parametros).grid(row=4, column=0, columnspan=3, pady=12)
+
+        # Botón Aplicar
+        tk.Button(
+            marco_scrollable,
+            text="Aplicar parámetros y reiniciar simulación",
+            bg=self.PALETA["verde_primary"], fg="white", bd=0, pady=8, font=("Segoe UI", 10, "bold"), cursor="hand2",
+            relief="flat",
+            command=self.aplicar_parametros,
+        ).grid(row=4, column=0, columnspan=4, pady=20)
 
     def _cargar_formulario(self, p):
         for f in fields(p):
@@ -385,7 +715,6 @@ class ControlCenter(ttk.Frame):
         return Parametros(**kw)
 
     def aplicar_parametros(self):
-        """Aplica el formulario: crea una simulación nueva en la sesión (la ven todas las ventanas)."""
         try:
             p = self._leer_formulario()
             base = self.sesion.nombre.replace(" (editado)", "")
@@ -398,8 +727,8 @@ class ControlCenter(ttk.Frame):
         if nombre in escenarios():
             self.sesion.cargar_escenario(nombre)
 
-    # ============================================================ observador
-    def _al_cambiar(self, evento):
+    # ================================================================= OBSERVADOR Y EVENTOS
+    def _al_cambiar(self, evento="actualizacion"):
         if not self.winfo_exists():
             return
         s, sim = self.sesion, self.sesion.sim
@@ -420,7 +749,6 @@ class ControlCenter(ttk.Frame):
             self._configurar_graficas()
             self._pendiente.update(graficas=True, calculos=True, datos=True)
 
-        # --- barra común
         nombres = list(escenarios())
         if s.nombre not in nombres:
             nombres.append(s.nombre)
@@ -428,43 +756,47 @@ class ControlCenter(ttk.Frame):
             self.cb_escenario.config(values=nombres)
         if self.cb_escenario.get() != s.nombre:
             self.cb_escenario.set(s.nombre)
+
         etiqueta = etiqueta_velocidad(s.velocidad)
         if self.cb_vel.get() != etiqueta:
             self.cb_vel.set(etiqueta)
-        self.btn_play.config(text="⏸ Pausar" if s.corriendo else "▶ Iniciar")
+
+        self.btn_play.config(
+            text="⏸ Pausar" if s.corriendo else "▶ Iniciar",
+            bg=self.PALETA["rojo_inactivo"] if s.corriendo else self.PALETA["verde_destacado"]
+        )
+
         r = sim.actual
         estado = "FINALIZADA" if sim.terminado else ("en ejecución" if s.corriendo else "en pausa")
         self.progreso.config(value=len(sim.registros) - 1)
-        self.lbl_tiempo.config(text=f"Simulación {estado}  –  t = {r.t:g} min de {sim.p.duracion:g} min  "
-                                    f"({hora_de(r.t, sim.p)})  –  paso {len(sim.registros) - 1} de {sim.n_pasos}")
+        self.lbl_tiempo.config(
+            text=f"Simulación {estado}  –  t = {r.t:g} min de {sim.p.duracion:g} min  "
+                 f"({hora_de(r.t, sim.p)})  –  paso {len(sim.registros) - 1} de {sim.n_pasos}"
+        )
 
-        # --- contenido: lo barato siempre; lo costoso solo si su pestaña está a la vista
         self._actualizar_panel()
         self._actualizar_control()
+
         for clave in self._pendiente:
             self._pendiente[clave] = True
         pesada = sim.terminado or evento != "actualizacion" or s.ticks % 10 == 0
         self._refrescar_visible(tabla=pesada)
 
     def _refrescar_visible(self, tabla=True):
-        """Redibuja solo la pestaña visible (las demás quedan pendientes hasta que se abran)."""
-        try:
-            pestaña = self.nb.tab(self.nb.select(), "text").strip()
-        except tk.TclError:
-            return
-        if pestaña == "Gráficas" and self._pendiente["graficas"]:
+        if self.indice_actual == 1 and self._pendiente["graficas"]:
             self._actualizar_graficas()
             self._pendiente["graficas"] = False
-        elif pestaña == "Cálculos paso a paso":
+        elif self.indice_actual == 2:
             self._mostrar_calculo()
-        elif pestaña == "Datos" and tabla and self._pendiente["datos"]:
+        elif self.indice_actual == 4 and tabla and self._pendiente["datos"]:
             self._actualizar_tabla()
             self._pendiente["datos"] = False
 
-    # ============================================================== salidas
+    # ================================================================= SALIDAS / ACCIONES
     def exportar_csv(self):
-        ruta = filedialog.asksaveasfilename(parent=self, defaultextension=".csv", filetypes=[("CSV", "*.csv")],
-                                            initialfile="simulacion.csv")
+        ruta = filedialog.asksaveasfilename(
+            parent=self, defaultextension=".csv", filetypes=[("CSV", "*.csv")], initialfile="simulacion.csv",
+        )
         if ruta:
             self.sesion.sim.a_csv(ruta)
             messagebox.showinfo("Exportado", f"Datos guardados en:\n{ruta}", parent=self)
@@ -474,21 +806,27 @@ class ControlCenter(ttk.Frame):
         s.pausar()
         if not s.sim.terminado and messagebox.askyesno(
                 "Simulación incompleta",
-                "La simulación no ha terminado. ¿Ejecutarla completa antes de generar el informe?", parent=self):
+                "La simulación no ha terminado. ¿Ejecutarla completa antes de generar el informe?", parent=self,
+        ):
             s.ejecutar_todo()
-        ruta = filedialog.asksaveasfilename(parent=self, defaultextension=".docx", filetypes=[("Word", "*.docx")],
-                                            initialfile="informe_invernadero.docx")
+        ruta = filedialog.asksaveasfilename(
+            parent=self, defaultextension=".docx", filetypes=[("Word", "*.docx")],
+            initialfile="informe_invernadero.docx",
+        )
         if not ruta:
             return
         try:
             generar_informe(s.sim, ruta, titulo=f"Informe de simulación – {s.nombre}")
             messagebox.showinfo("Informe generado", f"Informe guardado en:\n{ruta}", parent=self)
-        except Exception as e:  # noqa: BLE001 - mostrar cualquier problema al usuario
+        except Exception as e:
             messagebox.showerror("No se pudo generar el informe", str(e), parent=self)
 
     def verificar(self):
         v = verificacion.ejecutar_todo()
-        L = ["VERIFICACIÓN DEL MODELO", "=" * 60, "", "Humedad – cálculo manual vs programa (ejemplo del documento)"]
+        L = [
+            "VERIFICACIÓN DEL MODELO", "=" * 60, "",
+            "Humedad – cálculo manual vs programa (ejemplo del documento)",
+        ]
         for n, m, c, d in v["humedad_manual"]:
             L.append(f"  n={n}   manual={m:8.3f}   programa={c:10.5f}   |dif|={d:.1e}")
         L += ["", "Temperatura – cálculo manual vs programa"]
@@ -499,6 +837,7 @@ class ControlCenter(ttk.Frame):
         L += ["", "Error de Euler vs solución exacta según Δt"]
         L += [f"  Δt = {dt:5g} min   error máx = {e:.5f} °C" for dt, e in verificacion.error_vs_dt()]
         L += ["", "RESULTADO: " + ("TODO CUMPLE" if v["ok"] else "HAY PRUEBAS QUE FALLAN")]
+
         win = tk.Toplevel(self)
         win.title("Verificación del modelo")
         win.geometry("760x620")
@@ -506,3 +845,7 @@ class ControlCenter(ttk.Frame):
         t.pack(fill="both", expand=True)
         t.insert("1.0", "\n".join(L))
         t.config(state="disabled")
+
+
+# Alias para mantener la retrocompatibilidad
+ControlCenter = ControlCenterPanel
