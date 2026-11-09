@@ -16,6 +16,7 @@ from invernadero.parametros import Parametros, escenarios
 from invernadero.sesion import VELOCIDADES, etiqueta_velocidad
 from .tema import AZUL, GRIS, NARANJA, ROJO, VERDE, fuente_mono, hora_de
 
+
 NOMBRES_EVENTO = {
     "inicio": "Inicio",
     "fin": "Fin",

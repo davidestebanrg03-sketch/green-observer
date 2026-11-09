@@ -13,6 +13,7 @@ from invernadero.parametros import escenarios
 from invernadero.sesion import SesionSimulacion
 from .control_center import ControlCenterPanel
 from .invernadero_virtual import VentanaInvernadero
+from integracion_azure.cliente_iot import ClienteIoT
 
 
 # ------------------------------------------------------------
@@ -52,6 +53,18 @@ class AplicacionGreenObserver(tk.Tk):
         self.sesion = SesionSimulacion(
             self, escenarios()["Día normal"], "Día normal"
         )
+
+        # Integración con Azure IoT Hub
+        self.cliente_azure = ClienteIoT(self.sesion)
+
+        # Suscribir Azure a los cambios de la simulación
+        self.sesion.suscribir(
+            self.cliente_azure.observar,
+            notificar=False
+        )
+
+        # Iniciar el cliente de comunicación
+        self.cliente_azure.iniciar()
 
         self._ventana_inv = None
 
@@ -343,8 +356,16 @@ class AplicacionGreenObserver(tk.Tk):
     # ========================================================
 
     def cerrar(self):
+
         if hasattr(self, "sesion") and self.sesion:
             self.sesion.pausar()
+
+            self.sesion.desuscribir(
+                self.cliente_azure.observar
+            )
+
+            self.cliente_azure.cerrar()
+
         self.destroy()
 
 
