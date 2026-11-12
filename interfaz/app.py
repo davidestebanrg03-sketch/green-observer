@@ -1,8 +1,4 @@
-"""Aplicación principal de Green Observer.
-
-Pantalla de inicio, Control Center e invernadero virtual.
-La simulación es compartida entre las dos ventanas.
-"""
+# Aplicación principal de Green Observer.
 
 from pathlib import Path
 import tkinter as tk
@@ -15,11 +11,7 @@ from .control_center import ControlCenterPanel
 from .invernadero_virtual import VentanaInvernadero
 from integracion_azure.cliente_iot import ClienteIoT
 
-
-# ------------------------------------------------------------
-# PALETA DE COLORES Y CONSTANTES DE DISEÑO
-# ------------------------------------------------------------
-
+# Paleta de colores y constantes de Diseño
 TEAL = "#0C6F73"
 TEAL_TEXTO = "#07858A"
 LAVANDA = "#E8EAF6"
@@ -42,14 +34,14 @@ class AplicacionGreenObserver(tk.Tk):
         self.configure(bg=BLANCO)
         ttk.Style(self).theme_use("clam")
 
-        # Cargar recursos gráficos
+        # Cargar las imágenes utilizadas en la pantalla de inicio.
         self._imagenes_inicio = {
             "logo": self._cargar_imagen("logo_green_observer.png", 400, 300),
             "green_house": self._cargar_imagen("green_house.png", 220, 180),
             "control_center": self._cargar_imagen("control_center.png", 220, 180),
         }
 
-        # Sesión compartida del simulador
+        # Las dos vistas utilizan esta misma sesión y, por tanto, comparten el estado y los resultados de la simulación.
         self.sesion = SesionSimulacion(
             self, escenarios()["Día normal"], "Día normal"
         )
@@ -63,12 +55,12 @@ class AplicacionGreenObserver(tk.Tk):
             notificar=False
         )
 
-        # Iniciar el cliente de comunicación
+        # Iniciar el cliente para habilitar la comunicación con Azure.
         self.cliente_azure.iniciar()
 
         self._ventana_inv = None
 
-        # Pantalla de inicio y Control Center
+        # Preparar las vistas principales de la aplicación.
         self._pantalla_inicio = self._crear_inicio()
         self.control_center = ControlCenterPanel(
             self,
@@ -80,10 +72,8 @@ class AplicacionGreenObserver(tk.Tk):
         self.mostrar_inicio()
         self.protocol("WM_DELETE_WINDOW", self.cerrar)
 
-    # ========================================================
-    # PANTALLA DE INICIO
-    # ========================================================
 
+    # Pantalla de inicio
     def _crear_inicio(self):
         f = tk.Frame(self, bg=BLANCO)
 
@@ -94,10 +84,8 @@ class AplicacionGreenObserver(tk.Tk):
 
         return f
 
-    # ========================================================
-    # DIBUJO Y RENDERIZADO DE LA INTERFAZ
-    # ========================================================
 
+    # Dibujo y renderizado de la interfaz
     def _dibujar_inicio(self, event=None):
         c = self.canvas_inicio
         c.delete("all")
@@ -205,6 +193,7 @@ class AplicacionGreenObserver(tk.Tk):
             "CONTROL_CENTER_TAG",
         )
 
+    # Dibuja una tarjeta de acceso y configura sus eventos de interacción.
     def _dibujar_tarjeta(
         self, canvas, x, y, ancho, alto, titulo, identificador, etiqueta
     ):
@@ -262,10 +251,8 @@ class AplicacionGreenObserver(tk.Tk):
             lambda e: self._hover_tarjeta(etiqueta, False),
         )
 
-    # ========================================================
-    # GEOMETRÍA AUXILIAR
-    # ========================================================
 
+    # Dibuja un polígono suavizado para representar un rectángulo redondeado.
     def _rectangulo_redondeado(
         self, canvas, x1, y1, x2, y2, radio, color, tags=()
     ):
@@ -301,10 +288,8 @@ class AplicacionGreenObserver(tk.Tk):
             tags=tags,
         )
 
-    # ========================================================
-    # EFECTOS VISUALES
-    # ========================================================
 
+    # Efectos visuales
     def _hover_tarjeta(self, etiqueta, activo):
         color = COLOR_HOVER if activo else LAVANDA
 
@@ -314,10 +299,8 @@ class AplicacionGreenObserver(tk.Tk):
 
         self.canvas_inicio.config(cursor="hand2" if activo else "")
 
-    # ========================================================
-    # NAVEGACIÓN ENTRE VISTAS
-    # ========================================================
 
+    # Navegación entre vistas
     def mostrar_inicio(self):
         self.control_center.pack_forget()
         self._pantalla_inicio.pack(fill="both", expand=True)
@@ -343,6 +326,7 @@ class AplicacionGreenObserver(tk.Tk):
             abrir_control_center=self.abrir_control_center,
         )
 
+    # Carga una imagen de assets y ajusta su tamaño sin deformarla.
     def _cargar_imagen(self, nombre, ancho, alto):
         carpeta = Path(__file__).resolve().parent.parent / "assets"
         archivo = carpeta / nombre
@@ -351,10 +335,8 @@ class AplicacionGreenObserver(tk.Tk):
         imagen.thumbnail((ancho, alto), Image.Resampling.LANCZOS)
         return ImageTk.PhotoImage(imagen, master=self)
 
-    # ========================================================
-    # GESTIÓN DE CIERRE DE LA APLICACIÓN
-    # ========================================================
 
+    # Gestión de cierre de la aplicación
     def cerrar(self):
 
         if hasattr(self, "sesion") and self.sesion:

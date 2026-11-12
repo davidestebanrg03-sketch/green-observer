@@ -1,17 +1,12 @@
-"""Control virtual con histéresis (no hay dispositivos físicos).
-
-Riego:        ON si H <= H_min,  OFF si H >= H_max
-Ventilación:  ON si T >= T_max,  OFF si T <= T_ok
-Iluminación:  ON si la luz natural < L_min dentro del fotoperiodo
-La histéresis evita que los actuadores se enciendan y apaguen en cada paso.
-"""
-
-EPS = 1e-9  # tolerancia para comparaciones con números flotantes
+# Margen para evitar problemas en las comparaciones decimales
+EPS = 1e-9
 
 
 class Controlador:
     def __init__(self, p):
         self.p = p
+
+        # Los actuadores comienzan apagados al iniciar la simulación.
         self.riego = False
         self.vent = False
         self.luz = False

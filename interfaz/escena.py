@@ -1,9 +1,4 @@
-"""Dibujo del invernadero virtual (solo representación; no calcula nada del modelo).
-
-La escena se diseña en un lienzo lógico de 1000 × 600 y se escala al tamaño real de la
-ventana, de modo que se ve bien al cambiar el tamaño. Cada llamada a ``dibujar_escena``
-repinta todo a partir de un ``Registro`` del simulador.
-"""
+#Dibujo del invernadero virtual
 import math
 
 from invernadero import modelo

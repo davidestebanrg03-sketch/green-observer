@@ -1,12 +1,9 @@
-"""Ecuaciones diferenciales del invernadero y funciones de entrada.
+"""Ecuaciones diferenciales del invernadero y funciones de entrada"""
 
-Cada función es una expresión matemática pura (sin estado) para que pueda
-verificarse a mano y reutilizarse en las pruebas y en la ventana de cálculos.
-"""
 import math
 
 
-# ------------------------------------------------------------------ entradas
+# ------------------------------------------------------------------ Entradas ambientales
 def hora_del_dia(t, p):
     """Hora del día [0, 24) para el instante t [min]."""
     return (p.hora_inicio + t / 60.0) % 24.0
@@ -27,7 +24,7 @@ def luz_natural(t, p):
     return p.Lmax * (1.0 - p.nubosidad) * max(0.0, math.sin(2 * math.pi * (h - 6.0) / 24.0))
 
 
-# ------------------------------------------------------------- humedad (EDO)
+# ------------------------------------------------------------- Modelo de humedad
 def evaporacion(T, p):
     """E(T) = E0·(1 + β(T - Tref)); constante E0 si no hay acoplamiento."""
     if p.acoplar_evaporacion:
@@ -40,7 +37,7 @@ def tasa_humedad(R, E):
     return R - E
 
 
-# --------------------------------------------------------- temperatura (EDO)
+# --------------------------------------------------------- Modelo de temperatura
 def tasa_temperatura(T, Tamb, L, ventilando, p):
     """dT/dt = (k + kv·v)(Tamb - T) + a·L   [°C/min]
 
@@ -50,7 +47,7 @@ def tasa_temperatura(T, Tamb, L, ventilando, p):
     return k_ef * (Tamb - T) + p.a_sol * L
 
 
-# ----------------------------------------------------------- crecimiento (EDO)
+# ----------------------------------------------------------- Modelo de crecimiento
 def factores_crecimiento(T, H, L, p):
     """Factores de 0 a 1: fT (temperatura), fH (humedad), fL (luz)."""
     fT = math.exp(-((T - p.T_opt) / p.w_T) ** 2)

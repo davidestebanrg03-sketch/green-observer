@@ -28,9 +28,8 @@ NOMBRES_EVENTO = {
     "luz_off": "Iluminación desactivada",
 }
 
-
+# Construye el panel principal y sus herramientas de simulación.
 class ControlCenterPanel(tk.Frame):
-    """Centro de Control Integrado para Green Observer."""
 
     def __init__(
             self,
@@ -56,7 +55,7 @@ class ControlCenterPanel(tk.Frame):
         self.indice_actual = 0
         self.vistas = []
 
-        # Paleta de colores ajustada para una estética Flat/Moderna
+        # Colores utilizados en el menú lateral, las tarjetas y el contenido.
         self.PALETA = {
             "bg_sidebar": "#FFFFFF",
             "bg_content": "#F8FAFC",
@@ -96,11 +95,11 @@ class ControlCenterPanel(tk.Frame):
 
         self._crear_barra_superior(self.area_derecha)
 
-        # Contenedor de Vistas (Reemplaza al ttk.Notebook)
+        # Contenedor donde se crean las seis secciones del Control Center.
         self.contenedor_vistas = tk.Frame(self.area_derecha, bg=self.PALETA["bg_content"])
         self.contenedor_vistas.pack(fill="both", expand=True, padx=20, pady=10)
 
-        # Configurar el grid para que las vistas se superpongan
+        # Las vistas ocupan la misma posición y se muestra una a la vez.
         self.contenedor_vistas.grid_rowconfigure(0, weight=1)
         self.contenedor_vistas.grid_columnconfigure(0, weight=1)
 
@@ -113,7 +112,7 @@ class ControlCenterPanel(tk.Frame):
 
         self._cambiar_vista(0)
 
-    # ================================================================= SIDEBAR & BARRA
+    # ----------------------------------------------------------------- Barra lateral
     def _crear_sidebar(self):
         sidebar = tk.Frame(self, bg=self.PALETA["bg_sidebar"], width=240)
         sidebar.grid(row=0, column=0, sticky="nsew")
@@ -124,6 +123,7 @@ class ControlCenterPanel(tk.Frame):
         frame_logo = tk.Frame(sidebar, bg=self.PALETA["bg_sidebar"])
         frame_logo.pack(fill="x", padx=20, pady=(25, 30))
 
+        # Buscar el logotipo en la carpeta de recursos gráficos.
         ruta_logo = Path(__file__).resolve().parent.parent / "assets" / "logo_green_observer.png"
 
         if ruta_logo.is_file():
@@ -132,6 +132,7 @@ class ControlCenterPanel(tk.Frame):
             self.img_logo = ImageTk.PhotoImage(img_pil, master=self)
             lbl_img = tk.Label(frame_logo, image=self.img_logo, bg=self.PALETA["bg_sidebar"])
             lbl_img.pack(side="left", padx=(0, 10))
+        # Mostrar un texto alternativo si no se encuentra el archivo.
         else:
             lbl_img = tk.Label(frame_logo, text="[GO]", font=("Segoe UI", 12, "bold"), fg=self.PALETA["verde_primary"],
                                bg=self.PALETA["bg_sidebar"])
@@ -141,6 +142,7 @@ class ControlCenterPanel(tk.Frame):
                               fg=self.PALETA["verde_primary"], bg=self.PALETA["bg_sidebar"], justify="left")
         lbl_titulo.pack(side="left")
 
+        # Cargar los iconos del menú; si falta alguno, se utiliza la opción sin imagen.
         self.opciones_menu = [
             ("Panel", 0, "icon_panel.png"),
             ("Gráficas", 1, "icon_graficas.png"),
@@ -273,7 +275,7 @@ class ControlCenterPanel(tk.Frame):
 
         self._refrescar_visible()
 
-    # ================================================================= TAB 1: PANEL / DASHBOARD
+    # ================================================================= TAB 1: PANEL
     def _crear_panel_dashboard(self):
         f = tk.Frame(self.contenedor_vistas, bg=self.PALETA["bg_content"])
         f.grid(row=0, column=0, sticky="nsew")  # SUPERPUESTO
@@ -300,18 +302,20 @@ class ControlCenterPanel(tk.Frame):
             frame_val = tk.Frame(card, bg=self.PALETA["bg_card"])
             frame_val.pack(pady=(0, 15))
 
-            # --- NUEVO BLOQUE PARA CARGAR LA IMAGEN ---
+            # Cargar el icono correspondiente a cada indicador.
             ruta_img = Path(__file__).resolve().parent.parent / "assets" / archivo_img
             if ruta_img.is_file():
                 img_pil = Image.open(ruta_img).convert("RGBA")
-                img_pil.thumbnail((35, 35), Image.Resampling.LANCZOS)  # Ajusta el tamaño (ancho, alto) aquí
+                img_pil.thumbnail((35, 35), Image.Resampling.LANCZOS)  # Ajusta el tamaño (ancho, alto)
                 img_tk = ImageTk.PhotoImage(img_pil, master=self)
 
                 lbl_icono = tk.Label(frame_val, image=img_tk, bg=self.PALETA["bg_card"])
-                lbl_icono.image = img_tk  # Vital para que la imagen no desaparezca
+
+                # Mantener una referencia a la imagen para evitar que Tkinter la elimine.
+                lbl_icono.image = img_tk
                 lbl_icono.pack(side="left", padx=10)
             else:
-                # Respaldo por si la imagen no se encuentra
+                # Mostrar un aviso si no se encuentra el icono.
                 tk.Label(frame_val, text="[Falta Img]", bg=self.PALETA["bg_card"], font=("Segoe UI", 9),
                          fg="gray").pack(side="left", padx=10)
             # ------------------------------------------
@@ -321,13 +325,13 @@ class ControlCenterPanel(tk.Frame):
             lbl.pack(side="left")
             return lbl
 
-        # --- LLAMADAS ACTUALIZADAS ---
+        # Llamadas actualizadas
         self.lbl_card_temp = crear_tarjeta(0, "Temperatura", "icon_temp.png", "-- °C")
         self.lbl_card_hum = crear_tarjeta(1, "Humedad del suelo", "icon_hum.png", "-- %")
         self.lbl_card_luz = crear_tarjeta(2, "Iluminación", "icon_luz.png", "-- %")
         self.lbl_card_bio = crear_tarjeta(3, "Crecimiento", "icon_bio.png", "-- cm")
 
-        # Indicadores
+        # Indicadores visuales del estado de los actuadores.
         frame_actuadores = tk.Frame(f, bg=self.PALETA["bg_content"])
         frame_actuadores.pack(fill="x", pady=(30, 0), padx=10)
 
@@ -631,36 +635,36 @@ class ControlCenterPanel(tk.Frame):
         f.grid(row=0, column=0, sticky="nsew")
         self.vistas.append(f)
 
-        # --- 1. CREAR EL CANVAS Y LA BARRA DE DESPLAZAMIENTO ---
+        # Crear el área desplazable para mostrar todos los parámetros.
         canvas = tk.Canvas(f, bg=self.PALETA["bg_content"], highlightthickness=0)
         scrollbar = ttk.Scrollbar(f, orient="vertical", command=canvas.yview)
 
-        # Este es el frame que irá dentro del canvas y contendrá todos tus campos
+        # Frame que contiene los grupos de parámetros.
         marco_scrollable = tk.Frame(canvas, bg=self.PALETA["bg_content"])
 
-        # Actualizar el área de scroll dinámicamente cuando el frame cambie de tamaño
+        # Ajustar el área de desplazamiento cuando cambie el tamaño del contenido.
         marco_scrollable.bind(
             "<Configure>",
             lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
 
-        # Crear una "ventana" dentro del canvas para meter el frame
+        # Insertar el frame dentro del Canvas y ajustar su ancho.
         canvas_window = canvas.create_window((0, 0), window=marco_scrollable, anchor="nw")
 
-        # Hacer que el frame se expanda para ocupar todo el ancho del canvas
+        # Hacer que el frame se expanda para ocupar_todo el ancho del canvas
         canvas.bind('<Configure>', lambda e: canvas.itemconfig(canvas_window, width=e.width))
 
         canvas.configure(yscrollcommand=scrollbar.set)
 
-        # Empaquetar el canvas y la barra
+        # Mostrar el área de parámetros y su barra de desplazamiento.
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-        # (Opcional) Permitir usar la rueda del ratón para hacer scroll
+        # Permitir desplazarse por el formulario con la rueda del ratón.
         f.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
         # -------------------------------------------------------
 
-        # --- 2. DIBUJAR TUS CAMPOS DENTRO DEL 'marco_scrollable' ---
+        # Crear los campos agrupados según la configuración de invernadero.campos.
         for i, (grupo, lista) in enumerate(CAMPOS):
             lf = tk.LabelFrame(marco_scrollable, text=grupo, bg=self.PALETA["bg_card"], fg=self.PALETA["texto_dark"],
                                bd=1,
@@ -681,6 +685,7 @@ class ControlCenterPanel(tk.Frame):
                            relief="solid", padx=15, pady=15)
         lf.grid(row=len(CAMPOS) // 3, column=len(CAMPOS) % 3, sticky="nsew", padx=8, pady=8)
 
+        # Agregar las opciones que se activan o desactivan mediante casillas.
         for campo, etiqueta in BOOLEANOS:
             v = tk.BooleanVar()
             tk.Checkbutton(lf, text=etiqueta, variable=v, bg=self.PALETA["bg_card"], fg=self.PALETA["texto_dark"],
@@ -728,7 +733,7 @@ class ControlCenterPanel(tk.Frame):
         if nombre in escenarios():
             self.sesion.cargar_escenario(nombre)
 
-    # ================================================================= OBSERVADOR Y EVENTOS
+    # Recibir las notificaciones de la sesión y actualizar los elementos del panel.
     def _al_cambiar(self, evento="actualizacion"):
         if not self.winfo_exists():
             return
@@ -783,6 +788,7 @@ class ControlCenterPanel(tk.Frame):
         pesada = sim.terminado or evento != "actualizacion" or s.ticks % 10 == 0
         self._refrescar_visible(tabla=pesada)
 
+    # Actualizar los elementos de la vista seleccionada cuando sea necesario.
     def _refrescar_visible(self, tabla=True):
         if self.indice_actual == 1 and self._pendiente["graficas"]:
             self._actualizar_graficas()
@@ -793,7 +799,7 @@ class ControlCenterPanel(tk.Frame):
             self._actualizar_tabla()
             self._pendiente["datos"] = False
 
-    # ================================================================= SALIDAS / ACCIONES
+    # Exportar los registros de la simulación a un archivo CSV.
     def exportar_csv(self):
         ruta = filedialog.asksaveasfilename(
             parent=self, defaultextension=".csv", filetypes=[("CSV", "*.csv")], initialfile="simulacion.csv",
@@ -802,6 +808,7 @@ class ControlCenterPanel(tk.Frame):
             self.sesion.sim.a_csv(ruta)
             messagebox.showinfo("Exportado", f"Datos guardados en:\n{ruta}", parent=self)
 
+    # Ejecutar las pruebas del modelo y mostrar sus resultados.
     def generar_informe(self):
         s = self.sesion
         s.pausar()

@@ -18,7 +18,7 @@ class VentanaInvernadero(tk.Toplevel):
         self.geometry("1100x760")
         self.minsize(760, 560)
 
-        # Configuración de estilos para ttk ---
+        # Ajustar la apariencia de los elementos ttk.
         style = ttk.Style()
         style.theme_use('clam')
         style.configure("TCombobox", padding=5, relief="flat", background="#F1F5F9")
@@ -33,9 +33,8 @@ class VentanaInvernadero(tk.Toplevel):
         self.bind("<Destroy>", self._al_destruir)
         self.sesion.suscribir(self._al_cambiar)
 
-    # ------------------------------------------------------------ construcción
     def _crear_indicadores(self):
-        # Barra superior (Título y estado)
+        # Barra superior con el título y el estado de la simulación.
         barra = tk.Frame(self, bg="#FFFFFF", padx=15, pady=10)
         barra.pack(fill="x")
         tk.Label(barra, text="Invernadero virtual", font=("Segoe UI", 16, "bold"), fg="#1E293B", bg="#FFFFFF").pack(
@@ -43,10 +42,10 @@ class VentanaInvernadero(tk.Toplevel):
         self.lbl_estado = tk.Label(barra, text="", font=("Segoe UI", 9), fg="#64748B", bg="#FFFFFF")
         self.lbl_estado.pack(side="right")
 
-        # Línea separadora sutil
+        # Separar el encabezado de los indicadores.
         tk.Frame(self, bg="#E2E8F0", height=1).pack(fill="x")
 
-        # Fila de indicadores (Temperatura, Humedad, etc.)
+        # Crear los indicadores que muestran los valores actuales de la simulación.
         fila = tk.Frame(self, bg="#F8FAFC", padx=15, pady=15)
         fila.pack(fill="x")
         self.ind = {}
@@ -68,14 +67,14 @@ class VentanaInvernadero(tk.Toplevel):
         self.progreso = ttk.Progressbar(self, mode="determinate")
         self.progreso.pack(fill="x", padx=15, pady=(0, 10))
 
-        # Línea separadora
+        # Separar los indicadores de los controles.
         tk.Frame(self, bg="#E2E8F0", height=1).pack(fill="x")
 
-        # Barra inferior
+        # Barra inferior con los controles de la simulación.
         barra = tk.Frame(self, bg="#FFFFFF", padx=15, pady=10)
         barra.pack(fill="x", side="bottom")
 
-        # Estilo base para los botones
+        # Estilo compartido por los botones de esta ventana.
         btn_style = {"font": ("Segoe UI", 9, "bold"), "bd": 0, "padx": 12, "pady": 5, "cursor": "hand2",
                      "relief": "flat"}
 
@@ -106,7 +105,7 @@ class VentanaInvernadero(tk.Toplevel):
             tk.Button(barra, text="Control Center", bg="#008075", fg="white", command=self.abrir_control_center,
                       **btn_style).pack(side="right")
 
-    # ---------------------------------------------------------------- acciones
+    # ---------------------------------------------------------------- # Acciones de los controles
     def _elegir_escenario(self, _e=None):
         nombre = self.cb_escenario.get()
         if nombre in escenarios():
@@ -125,7 +124,7 @@ class VentanaInvernadero(tk.Toplevel):
         if evento.widget is self:
             self.sesion.desuscribir(self._al_cambiar)
 
-    # -------------------------------------------------------------- observador
+    # -------------------------------------------------------------- 	# Actualización de la ventana
     def _al_cambiar(self, evento):
         if not self.winfo_exists():
             return
@@ -153,10 +152,9 @@ class VentanaInvernadero(tk.Toplevel):
         r, p = sim.actual, sim.p
         escena.dibujar_escena(self.cv, r, p, self._fotograma)
 
-        # --- COLORES MODERNOS ---
+        # Elegir el color de cada indicador según el valor actual.
         ct = "#EF4444" if r.T >= p.T_max else "#3B82F6" if r.T < 15 else "#10B981"
         ch = "#F59E0B" if r.H <= p.H_min else "#3B82F6" if r.H >= p.H_max else "#10B981"
-        # -------------------------------
 
         self._poner("T", f"{r.T:.2f} °C", ct)
         self._poner("H", f"{r.H:.2f} %", ch)

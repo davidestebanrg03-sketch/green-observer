@@ -1,9 +1,4 @@
-"""Parámetros del modelo, condiciones iniciales y escenarios predefinidos.
 
-Unidades (tiempo base = minutos):
-    temperatura  -> °C          humedad del suelo -> %
-    luminosidad  -> % (0-100)   tamaño de la planta -> cm
-"""
 from dataclasses import dataclass, replace
 
 
@@ -62,42 +57,61 @@ class Parametros:
     ilum_hora_fin: float = 20.0
 
     def validar(self):
-        """Lanza ValueError si los parámetros no son coherentes."""
+        """Comprueba que los parámetros tengan valores coherentes."""
+
+        # El paso y la duración deben ser positivos.
         if self.dt <= 0 or self.duracion <= 0:
             raise ValueError("Δt y la duración deben ser positivos.")
         if self.dt > self.duracion:
             raise ValueError("Δt no puede ser mayor que la duración.")
+
+        # Evita simulaciones con una cantidad excesiva de iteraciones.
         if self.duracion / self.dt > 200_000:
             raise ValueError("Demasiados pasos (máx. 200 000). Aumente Δt.")
+
+        # Comprueba que las condiciones iniciales estén dentro de los límites.
         if not (0 <= self.H0 <= 100):
             raise ValueError("La humedad inicial debe estar entre 0 y 100 %.")
         if not (0 <= self.nubosidad <= 1):
             raise ValueError("La nubosidad debe estar entre 0 y 1.")
+
+        # Los umbrales deben mantener un intervalo válido para la histéresis.
         if self.H_min >= self.H_max:
             raise ValueError("H_min debe ser menor que H_max.")
         if self.T_ok >= self.T_max:
             raise ValueError("T_ok debe ser menor que T_max.")
+
+        # El tamaño inicial no puede superar la capacidad máxima de crecimiento.
         if self.K <= 0 or self.P0 < 0:
             raise ValueError("K debe ser positivo y P0 no negativo.")
         if self.P0 > self.K:
             raise ValueError("El tamaño inicial P0 no puede superar el máximo K.")
+
+        # Las tolerancias determinan cómo afectan las condiciones ambientales al crecimiento de la planta.
         if self.w_T <= 0 or self.w_H <= 0:
             raise ValueError("Las tolerancias de temperatura y humedad deben ser positivas.")
+
+        # Comprueba los valores relacionados con la iluminación.
         if self.Lmax < 0:
             raise ValueError("La luminosidad máxima no puede ser negativa.")
         if not (0 <= self.L_min <= 100) or not (0 <= self.L_art <= 100):
             raise ValueError("La luz mínima y la artificial deben estar entre 0 y 100 %.")
         if not (0 <= self.ilum_hora_ini < 24) or not (0 <= self.ilum_hora_fin <= 24):
             raise ValueError("Las horas de iluminación deben estar entre 0 y 24.")
+
+        # El riego y la evaporación no pueden representar valores negativos.
         if self.R_on < 0 or self.E0 < 0:
             raise ValueError("El aporte de riego y la pérdida de agua no pueden ser negativos.")
 
 
 def escenarios():
-    """Escenarios predefinidos (los de la sección de validación del documento)."""
+    """Devuelve los escenarios predefinidos para ejecutar la simulación."""
+
     base = Parametros()
+
     return {
         "Día normal": base,
+
         "Ejemplo manual del documento": replace(
             base, duracion=10, usar_crecimiento=False, acoplar_evaporacion=False,
             E0=0.8, R_on=2.5, H_min=56.0, H_max=100.0),

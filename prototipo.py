@@ -1,8 +1,4 @@
-"""ETAPA 4 – Prototipo matemático SIN interfaz gráfica.
-
-Uso:   python prototipo.py                 (escenario "Día normal")
-       python prototipo.py "Baja humedad"
-"""
+"""ETAPA 4 – Prototipo matemático SIN interfaz gráfica."""
 import os
 import sys
 

@@ -1,5 +1,6 @@
 """Pruebas de la sesión compartida y de los cambios heredados de la segunda versión."""
 import unittest
+import importlib.util
 from dataclasses import replace
 
 from invernadero.parametros import Parametros, escenarios
@@ -29,6 +30,14 @@ class PlanificadorFalso:
             self.tareas.pop(i)()
             n += 1
         return n
+
+    def correr_una(self):
+        if not self.tareas:
+            return
+
+        i = min(self.tareas)
+        tarea = self.tareas.pop(i)
+        tarea()
 
 
 def sesion(**cambios):
@@ -83,8 +92,12 @@ class TestSesion(unittest.TestCase):
         plan, s = sesion()
         s.set_velocidad(VELOCIDADES[-1])
         s.iniciar()
-        plan.tareas[min(plan.tareas)]()
-        self.assertEqual(len(s.sim.registros) - 1, round(VELOCIDADES[-1] * 0.04))
+        plan.correr_una()
+
+        self.assertEqual(
+            len(s.sim.registros) - 1,
+            round(VELOCIDADES[-1] * 0.04)
+        )
 
     def test_cargar_escenario_reemplaza_la_simulacion_y_avisa(self):
         plan, s = sesion()
@@ -175,7 +188,7 @@ class TestMejorasDeLaSegundaVersion(unittest.TestCase):
                 replace(Parametros(), **cambio).validar()
 
 
-@unittest.skipUnless(__import__("importlib").util.find_spec("tkinter"), "Tkinter no disponible")
+@unittest.skipUnless(importlib.util.find_spec("tkinter"), "Tkinter no disponible")
 class TestInterfaz(unittest.TestCase):
     """Prueba de humo: abre las ventanas y comprueba que muestran la misma simulación."""
 
@@ -235,12 +248,15 @@ class TestInterfaz(unittest.TestCase):
         app = self.app
         app.abrir_control_center()
         app.deiconify()
+
         for nombre in escenarios():
             app.sesion.cargar_escenario(nombre)
+
             for _ in range(5):
                 app.sesion.un_paso()
-            for i in range(len(app.control_center.nb.tabs())):
-                app.control_center.nb.select(i)
+
+            for i in range(len(app.control_center.vistas)):
+                app.control_center._cambiar_vista(i)
                 app.update()
 
 

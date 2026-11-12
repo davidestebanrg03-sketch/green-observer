@@ -1,32 +1,13 @@
-"""Sesión de simulación compartida entre varias ventanas (patrón observador).
 
-La sesión es la ÚNICA dueña del simulador y del reloj. Las ventanas (el invernadero
-virtual, el Control Center, ...) no calculan nada: se suscriben a la sesión, reciben
-un aviso cada vez que algo cambia y leen el estado desde ``sesion.sim``.
-
-Esto separa la simulación matemática de su representación visual:
-
-    SesionSimulacion  ──avisa──▶  Invernadero virtual   (dibujo)
-         │                  └───▶  Control Center        (gráficas, tablas, cálculos)
-         └── Simulador (Euler + control)  →  modelo (ecuaciones)
-
-No depende de Tkinter: solo necesita un «planificador» con ``after(ms, f)`` y
-``after_cancel(id)`` (cualquier ventana de Tkinter lo cumple; las pruebas usan uno falso).
-
-Eventos que reciben los observadores (``observador(evento)``):
-    "actualizacion"  se calcularon pasos nuevos
-    "estado"         cambió iniciar/pausar/velocidad (los datos no cambiaron)
-    "nueva"          hay una simulación nueva (otro escenario o parámetros distintos)
-    "reinicio"       se volvió a t = 0 con los mismos parámetros
-"""
 import traceback
 
 from .parametros import Parametros, escenarios
 from .simulador import Simulador
 
-TICK_MS = 40            # periodo del reloj cuando se simula rápido [ms]
+# Intervalo del reloj para organizar la ejecución [ms].
+TICK_MS = 40
 
-# Velocidades disponibles: pasos de simulación por segundo real.
+# Velocidades expresadas en pasos de simulación por segundo real.
 VELOCIDADES = (1, 5, 25, 125, 500, 2000)
 VELOCIDAD_INICIAL = 125
 
@@ -36,16 +17,19 @@ def etiqueta_velocidad(v):
 
 
 class SesionSimulacion:
+    # Coordina el simulador y mantiene sincronizadas las ventanas.
     def __init__(self, planificador, parametros=None, nombre="Día normal"):
         self._plan = planificador
         self._tarea = None
         self._observadores = []
         self.velocidad = VELOCIDAD_INICIAL
         self.nombre = nombre
+
+        # La sesión crea y conserva el único simulador compartido.
         self.sim = Simulador(parametros if parametros is not None else escenarios()[nombre])
         self._ticks = 0
 
-    # ----------------------------------------------------------- consulta
+    # ---------------------------------------------------------- Consultas
     @property
     def p(self):
         return self.sim.p
@@ -60,10 +44,10 @@ class SesionSimulacion:
 
     @property
     def ticks(self):
-        """Cantidad de avisos de avance emitidos (sirve para refrescar tablas pesadas de vez en cuando)."""
+        #Cantidad de avisos de avance enviados a las ventanas.
         return self._ticks
 
-    # ------------------------------------------------------- observadores
+    # -------------------------------------------------------- Observadores
     def suscribir(self, observador, notificar=True):
         if observador not in self._observadores:
             self._observadores.append(observador)
@@ -81,30 +65,40 @@ class SesionSimulacion:
             except Exception:  # noqa: BLE001 - una ventana defectuosa no debe detener a las demás
                 traceback.print_exc()
 
-    # ------------------------------------------------------------- reloj
+    # -------------------------------------------------------------- Reloj
     def _parametros_reloj(self):
-        """(intervalo en ms, pasos por aviso) para la velocidad actual."""
+        # Calcula el intervalo del reloj y los pasos por cada aviso.
         pasos_por_tick = self.velocidad * TICK_MS / 1000.0
+
+        # A velocidades bajas se aumenta el intervalo entre avisos.
         if pasos_por_tick < 1:
             return max(1, round(1000.0 / self.velocidad)), 1
+
+        # A velocidades altas se ejecutan varios pasos en cada aviso.
         return TICK_MS, max(1, round(pasos_por_tick))
 
     def iniciar(self):
+        # Programa la ejecución si está pausada y aún no ha terminado.
         if self._tarea is None and not self.sim.terminado:
             self._programar()
             self._avisar("estado")
 
     def _programar(self):
+        # Programa el siguiente avance utilizando el planificador.
         intervalo, _ = self._parametros_reloj()
         self._tarea = self._plan.after(intervalo, self._tick)
 
     def _tick(self):
+        # Ejecuta los pasos correspondientes a un aviso del reloj.
         self._tarea = None
         _, n = self._parametros_reloj()
+
         for _ in range(n):
             if not self.sim.paso():
                 break
+
         self._ticks += 1
+
         if self.sim.terminado:
             self._avisar("actualizacion")
             self._avisar("estado")
@@ -113,12 +107,14 @@ class SesionSimulacion:
             self._avisar("actualizacion")
 
     def pausar(self):
+        # Cancela el siguiente avance programado.
         if self._tarea is not None:
             self._plan.after_cancel(self._tarea)
             self._tarea = None
             self._avisar("estado")
 
     def alternar(self):
+        # Cambia entre iniciar y pausar la simulación.
         if self.corriendo:
             self.pausar()
         else:
@@ -129,14 +125,16 @@ class SesionSimulacion:
         if v <= 0:
             raise ValueError("La velocidad debe ser positiva.")
         self.velocidad = v
-        if self._tarea is not None:           # reprogramar con el nuevo ritmo
+
+        # Si está ejecutándose, programa el siguiente avance con el nuevo ritmo.
+        if self._tarea is not None:
             self._plan.after_cancel(self._tarea)
             self._programar()
         self._avisar("estado")
 
-    # ---------------------------------------------------------- acciones
+    # ------------------------------------------------------------- Acciones
     def un_paso(self):
-        """Avanza exactamente un paso (pausa el reloj si estaba en marcha)."""
+        # Pausa el reloj y avanza exactamente un paso de simulación.
         self.pausar()
         self.sim.paso()
         self._ticks += 1
@@ -144,6 +142,7 @@ class SesionSimulacion:
         self._avisar("estado")
 
     def ejecutar_todo(self):
+        # Ejecuta los pasos restantes hasta completar la simulación.
         self.pausar()
         self.sim.ejecutar()
         self._ticks += 1
@@ -151,19 +150,24 @@ class SesionSimulacion:
         self._avisar("estado")
 
     def reiniciar(self):
-        """Vuelve a t = 0 con los mismos parámetros."""
+        # Vuelve al instante inicial conservando los mismos parámetros.
         self.pausar()
         self.sim.reiniciar()
         self._avisar("reinicio")
 
     def cargar(self, parametros, nombre=None):
-        """Sustituye la simulación por otra con nuevos parámetros (lanza ValueError si no son válidos)."""
-        nuevo = Simulador(parametros)       # valida antes de tocar nada
+        # Reemplaza la simulación después de validar los nuevos parámetros.
+        nuevo = Simulador(parametros)
+
+        # Primero se construye el nuevo simulador; si falla la validación, sesión actual permanece intacta.
         self.pausar()
         self.sim = nuevo
+
         if nombre is not None:
             self.nombre = nombre
+
         self._avisar("nueva")
 
+    # Carga uno de los escenarios predefinidos.
     def cargar_escenario(self, nombre):
         self.cargar(escenarios()[nombre], nombre)

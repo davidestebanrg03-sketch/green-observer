@@ -1,12 +1,14 @@
-"""Colores y utilidades visuales compartidas por todas las ventanas."""
+#Colores y utilidades visuales compartidas por todas las ventanas.
+
 import tkinter.font as tkfont
 
+# Colores utilizados para representar estados y elementos de la interfaz.
 VERDE, NARANJA, ROJO, AZUL, GRIS = "#2e9e5b", "#e08a1e", "#d9534f", "#2e86c1", "#888888"
 VERDE_OSCURO = "#1b5e20"
 
 
 def mezclar(c1, c2, f):
-    """Interpola dos colores '#rrggbb' (f = 0 → c1, f = 1 → c2) y devuelve '#rrggbb'."""
+    # Mezclar dos colores según un factor entre 0 y 1.
     f = min(1.0, max(0.0, f))
     a = [int(c1[i:i + 2], 16) for i in (1, 3, 5)]
     b = [int(c2[i:i + 2], 16) for i in (1, 3, 5)]
@@ -20,11 +22,11 @@ def fuente_mono(ventana, tam=10):
 
 
 def hhmm(hora):
-    """Hora decimal (6.5) → '06:30'."""
+    # Convertir una hora decimal a formato de 24 horas (HH:MM).
     minutos = int(round(hora * 60)) % (24 * 60)
     return f"{minutos // 60:02d}:{minutos % 60:02d}"
 
 
 def hora_de(t_min, p):
-    """Hora del día 'hh:mm' para el instante t [min] de una simulación."""
+    # Obtener la hora del día correspondiente a un instante de la simulación.
     return hhmm(p.hora_inicio + t_min / 60.0)
